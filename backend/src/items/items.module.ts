@@ -20,10 +20,10 @@ import {
 } from '../entities/item.entity';
 import { Consignment } from '../entities/consignment.entity';
 import { Appraisal } from '../entities/appraisal.entity';
+import { RefurbishOverrun } from '../entities/refurbish-overrun.entity';
 import { JwtAuthGuard, JwtPayload } from '../auth/jwt.guard';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-
 class AddWorkLogDto {
   type: WorkLogType;
   note?: string;
@@ -41,6 +41,8 @@ class AdvanceDto {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PREPARING: ['PHOTOGRAPHY', 'OFF_SHELF'],
+  // OVERRUN_PENDING 只能由超预算确认单的卖家决定来流转，仓库不能直接推进
+  OVERRUN_PENDING: [],
   PHOTOGRAPHY: ['LISTED', 'PREPARING'],
   LISTED: ['RESERVED', 'OFF_SHELF'],
   RESERVED: ['LISTED', 'SOLD'],
@@ -48,6 +50,12 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   DELIVERED: ['RETURNED', 'SETTLED'],
   RETURNED: ['LISTED', 'OFF_SHELF'],
 };
+
+/** 买家不可见的内部字段：翻新前旧照片仅保留在内部审计记录中 */
+function sanitizeForBuyer(item: any) {
+  const { archivedInternalPhotos, approvedOverrunCost, ...rest } = item;
+  return rest;
+}
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('items')
@@ -84,7 +92,7 @@ export class ItemController {
     const cMap = new Map(consignments.map((c) => [c.id, c]));
     return items.map((i) => {
       const c = cMap.get(i.consignmentId);
-      return {
+      const row: any = {
         ...i,
         sellerId: c?.sellerId,
         brand: c?.brand,
@@ -92,11 +100,17 @@ export class ItemController {
         floor: c?.floor,
         disassemblable: c?.disassemblable,
       };
+      // 买家只看翻新后对外状态：旧照片归档字段不下发
+      if (user.role === 'BUYER') return sanitizeForBuyer(row);
+      return row;
     });
   }
 
   @Get(':id')
-  async detail(@Param('id') id: string) {
+  async detail(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
     const item = await this.ds.getRepository(Item).findOne({ where: { id } });
     if (!item) throw new NotFoundException('商品不存在');
     const consignment = await this.ds
@@ -109,7 +123,22 @@ export class ItemController {
       where: { itemId: id },
       order: { createdAt: 'DESC' },
     });
-    return { item, consignment, appraisal, workLogs };
+    const overrun = await this.ds.getRepository(RefurbishOverrun).findOne({
+      where: { itemId: id },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (user.role === 'BUYER') {
+      // 买家只看翻新后的真实状态：内部审计旧照片与已确认超预算额度不下发
+      return {
+        item: sanitizeForBuyer(item),
+        defectNote: item.defectNote,
+        workLogs: [],
+        appraisal: null,
+        overrun: null,
+      };
+    }
+    return { item, consignment, appraisal, workLogs, overrun };
   }
 
   /** 清洁、补漆、维修、拍照、上架描述、入库登记——作业即记账 */
@@ -137,7 +166,56 @@ export class ItemController {
       if (item.status === 'SOLD' || item.status === 'DELIVERED') {
         throw new BadRequestException('已成交商品不可再登记作业');
       }
+      if (item.status === 'OVERRUN_PENDING') {
+        throw new BadRequestException(
+          '翻新成本超预算，正等待卖家确认，确认前暂停翻新作业',
+        );
+      }
       const cost = Number(dto.cost || 0);
+
+      // 补漆/维修费用受"估价预算 + 卖家已确认超预算额度"管控
+      if ((dto.type === 'REPAINT' || dto.type === 'REPAIR') && cost > 0) {
+        const consignment = await m.findOne(Consignment, {
+          where: { id: item.consignmentId },
+        });
+        const appraisal = consignment
+          ? await m.findOne(Appraisal, {
+              where: { consignmentId: consignment.id },
+            })
+          : null;
+        const budget = Number(appraisal?.estimatedRefurbishCost || 0);
+        const budgetLeft = Math.max(0, budget - Number(item.refurbishCost));
+        const needApproved = Math.max(0, cost - budgetLeft);
+
+        if (needApproved > 0) {
+          const accepted = await m.find(RefurbishOverrun, {
+            where: { itemId: id, status: 'ACCEPTED' },
+          });
+          let quotaLeft = 0;
+          accepted.forEach(
+            (o) =>
+              (quotaLeft += Number(o.extraTotal) - Number(o.extraSpentCost)),
+          );
+          if (quotaLeft < needApproved) {
+            throw new BadRequestException(
+              `本次翻新费 ¥${cost.toFixed(2)} 超出估价预算剩余 ¥${budgetLeft.toFixed(2)}，` +
+                `卖家已确认追加额度剩余 ¥${quotaLeft.toFixed(2)}；` +
+                '请先发起翻新超预算确认并经卖家接受，或调整费用',
+            );
+          }
+          // 实际追加支出按顺序占用各确认单额度
+          let toAllocate = needApproved;
+          for (const o of accepted) {
+            if (toAllocate <= 0) break;
+            const left = Number(o.extraTotal) - Number(o.extraSpentCost);
+            const use = Math.min(left, toAllocate);
+            o.extraSpentCost = (Number(o.extraSpentCost) + use).toFixed(2);
+            await m.save(o);
+            toAllocate -= use;
+          }
+        }
+      }
+
       const log = m.create(ItemWorkLog, {
         itemId: id,
         assigneeId: user.sub,
@@ -174,9 +252,31 @@ export class ItemController {
           `商品当前 ${item.status}，不能转到 ${dto.to}；允许：${allowed.join(', ') || '无'}`,
         );
       }
+
+      // 发生过翻新超预算的商品，上架前必须翻新完成重新拍摄并更新瑕疵说明
+      if (dto.to === 'LISTED') {
+        const overrun = await mgr.findOne(RefurbishOverrun, {
+          where: { itemId: id },
+          order: { createdAt: 'DESC' },
+        });
+        if (
+          overrun &&
+          ['ACCEPTED', 'REJECTED_REDUCE'].includes(overrun.status) &&
+          !overrun.photoCompletedAt
+        ) {
+          throw new BadRequestException(
+            '该商品翻新方案经卖家重新确认，需先重新拍摄翻新后照片、更新瑕疵说明，才能上架',
+          );
+        }
+      }
+
       item.status = dto.to as any;
       if (dto.description != null) item.description = dto.description;
-      if (dto.photos) item.photos = dto.photos;
+      // 超预算重拍商品的照片只由 /refurbish-overruns/:id/rephotos 更新，旧照片已归档内部审计
+      const hasOverrunPhotos = await mgr.findOne(RefurbishOverrun, {
+        where: { itemId: id },
+      });
+      if (dto.photos && !hasOverrunPhotos) item.photos = dto.photos;
       if (dto.warehouseSlot) item.warehouseSlot = dto.warehouseSlot;
       if (dto.deliveryRadiusKm != null) {
         item.deliveryRadiusKm = Number(dto.deliveryRadiusKm);

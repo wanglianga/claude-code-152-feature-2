@@ -127,6 +127,10 @@ export class ConsignmentController {
     }
     const seller = await this.users.findOne({ where: { id: row.sellerId } });
     const profile = await this.risk.getOrCreate(row.sellerId);
+    // 买家只看翻新后对外状态：卖家申报的瑕疵旧照片仅保留内部审计
+    if (user.role === 'BUYER') {
+      return { ...row, defectPhotos: [], sellerName: seller?.name };
+    }
     return { ...row, sellerName: seller?.name, sellerProfile: profile };
   }
 
@@ -154,7 +158,7 @@ export class ConsignmentController {
     if (row.sellerId !== user.sub) {
       throw new ForbiddenException('只能撤销自己的寄卖申请');
     }
-    if (['LISTED', 'CANCELLED', 'REJECTED'].includes(row.status)) {
+    if (['LISTED', 'CANCELLED', 'REJECTED', 'OVERRUN_CANCELLED'].includes(row.status)) {
       throw new BadRequestException(
         `状态 ${row.status} 下不可反悔（已成交/已终结请走售后工单）`,
       );

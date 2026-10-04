@@ -9,6 +9,7 @@ import { ConsignmentDetail } from './ConsignmentDetail';
 export function SellerView({ user, go, mode = 'list' }: { user: AuthUser; go: (k: string) => void; mode?: 'list' | 'settlements' }) {
   const [list, setList] = useState<any[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  const [pendingOverruns, setPendingOverruns] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [page, setPage] = useState(mode);
@@ -20,6 +21,9 @@ export function SellerView({ user, go, mode = 'list' }: { user: AuthUser; go: (k
   const load = () => {
     api('/consignments').then(setList);
     api('/analytics/seller-profiles/' + user.id).then(setProfile).catch(() => {});
+    api('/refurbish-overruns?status=PENDING_SELLER')
+      .then((rs: any[]) => setPendingOverruns(rs))
+      .catch(() => {});
   };
   useEffect(load, [user.id]);
 
@@ -50,6 +54,13 @@ export function SellerView({ user, go, mode = 'list' }: { user: AuthUser; go: (k
           ，下次上门验真：
           <b>{profile.verificationLevel === 'STRICT' ? '严格验真（逐项核对）' : '常规验真'}</b>
           <div className="hint" style={{ color: 'inherit' }}>{profile.riskNote}</div>
+        </div>
+      )}
+
+      {pendingOverruns.length > 0 && (
+        <div className="banner risk" style={{ cursor: 'pointer' }} onClick={() => go('seller-overruns')}>
+          你有 <b>{pendingOverruns.length}</b> 张翻新超预算确认单待处理：仓库清洁时发现估价时未预见的问题，
+          需你确认新增工时/材料费与售价、上架时间变化。<b>点击前往确认 →</b>
         </div>
       )}
 

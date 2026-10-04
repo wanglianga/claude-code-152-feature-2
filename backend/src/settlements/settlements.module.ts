@@ -15,6 +15,7 @@ import { Settlement, SettlementEntry } from '../entities/settlement.entity';
 import { Order } from '../entities/order.entity';
 import { Item } from '../entities/item.entity';
 import { Appraisal } from '../entities/appraisal.entity';
+import { RefurbishOverrun } from '../entities/refurbish-overrun.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { Consignment } from '../entities/consignment.entity';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -87,6 +88,26 @@ export class SettlementController {
       const returned = order.status === 'RETURNED';
       const refurb = Number(item.cleaningCost) + Number(item.refurbishCost);
 
+      // 卖家已确认接受的翻新超预算追加（实际支出已在作业记录累计进 refurbishCost，这里取确认单做来源引用）
+      const overruns = await m.find(RefurbishOverrun, {
+        where: { itemId: item.id, status: 'ACCEPTED' },
+      });
+      const approvedExtraQuota = overruns.reduce(
+        (s, o) => s + Number(o.extraTotal),
+        0,
+      );
+      const approvedExtraSpent = overruns.reduce(
+        (s, o) => s + Number(o.extraSpentCost),
+        0,
+      );
+      const overrunRef = overruns.length
+        ? `；含卖家超预算确认接受追加（确认单 ${overruns
+            .map((o) => o.code)
+            .join('、')}，确认额度 ¥${approvedExtraQuota.toFixed(2)}、实际追加作业 ¥${approvedExtraSpent.toFixed(
+            2,
+          )}，从成交款扣除）`
+        : '';
+
       let storageDays = 0;
       if (item.enteredWarehouseAt) {
         storageDays = Math.max(
@@ -147,7 +168,11 @@ export class SettlementController {
           add(
             'REFURBISH_FEE',
             refurb,
-            `清洁 ¥${item.cleaningCost} + 翻新 ¥${item.refurbishCost}（来源：商品作业记录；退货由平台吸收）`,
+            `清洁 ¥${item.cleaningCost} + 翻新 ¥${item.refurbishCost}（来源：商品作业记录；退货由平台吸收）${
+              approvedExtraSpent > 0
+                ? `；其中卖家曾确认追加额度 ¥${approvedExtraQuota.toFixed(2)}、实际追加作业 ¥${approvedExtraSpent.toFixed(2)}，退货后由平台吸收`
+                : ''
+            }`,
           );
         }
         if (storageFee > 0) {
@@ -177,7 +202,8 @@ export class SettlementController {
           add(
             'REFURBISH_FEE',
             refurb,
-            `清洁费 ¥${item.cleaningCost} + 翻新费 ¥${item.refurbishCost}（来源：仓库/翻新师作业记录，从卖家应得扣除）`,
+            `清洁费 ¥${item.cleaningCost} + 翻新费 ¥${item.refurbishCost}（来源：仓库/翻新师作业记录，从卖家应得扣除）${overrunRef}`,
+            overruns[0]?.id || null,
           );
         }
         if (storageFee > 0) {

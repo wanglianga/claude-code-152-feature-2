@@ -141,9 +141,14 @@ export class OrderController {
     const delivery = await this.ds.getRepository(Delivery).findOne({
       where: { orderId: id },
     });
-    const item = await this.ds.getRepository(Item).findOne({
+    let item = await this.ds.getRepository(Item).findOne({
       where: { id: order.itemId },
     });
+    // 买家只看翻新后对外状态，内部审计旧照片/已确认超预算额度不下发
+    if (item && user.role === 'BUYER') {
+      const { archivedInternalPhotos, approvedOverrunCost, ...pub }: any = item;
+      item = pub;
+    }
     return { order, delivery, item };
   }
 

@@ -11,12 +11,14 @@ export type StockLocation = 'WAREHOUSE' | 'SELLER_HOME';
 
 /**
  * 商品状态：
- * PREPARING 清洁翻新中 / PHOTOGRAPHY 拍照中 / LISTED 在售 /
+ * PREPARING 清洁翻新中 / OVERRUN_PENDING 翻新超预算待卖家确认 /
+ * PHOTOGRAPHY 拍照中 / LISTED 在售 /
  * RESERVED 已被下单锁定 / SOLD 已成交 / DELIVERED 已交付 /
  * RETURNED 退货 / OFF_SHELF 下架
  */
 export type ItemStatus =
   | 'PREPARING'
+  | 'OVERRUN_PENDING'
   | 'PHOTOGRAPHY'
   | 'LISTED'
   | 'RESERVED'
@@ -72,6 +74,25 @@ export class Item {
   /** 实际翻新费（补漆/维修等） */
   @Column({ type: 'numeric', precision: 10, scale: 2, default: '0' })
   refurbishCost: string;
+
+  /**
+   * 卖家已确认接受的超预算追加费用（翻新超预算确认单 ACCEPTED 时累计）。
+   * 结算时与 refurbishCost 一并从成交款扣除。
+   */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: '0' })
+  approvedOverrunCost: string;
+
+  /**
+   * 翻新前/估价阶段旧照片的内部审计归档（含卖家瑕疵照片与超预算发现照片）。
+   * 翻新完成重新拍摄后，对外只展示 photos（翻新后真实状态），
+   * 旧照片仅仓库/估价师/客服/运营等内部角色在审计视图可见，买家不可见。
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  archivedInternalPhotos: string[];
+
+  /** 翻新后更新的瑕疵说明（买家可见的真实状态描述） */
+  @Column({ type: 'text', default: '' })
+  defectNote: string;
 
   @Column({ type: 'jsonb', default: () => "'[]'" })
   photos: string[];

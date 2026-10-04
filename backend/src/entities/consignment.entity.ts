@@ -21,7 +21,8 @@ export type ElevatorType = 'ELEVATOR' | 'NO_ELEVATOR' | 'WALKUP';
 /**
  * 寄卖申请状态：
  * SUBMITTED 待估价 / APPRAISAL_SCHEDULED 已约上门 / APPRAISED 已估价
- * LISTED 已生成商品上架中 / CANCELLED 卖家反悔 / REJECTED 不符合寄卖
+ * LISTED 已生成商品上架中 / CANCELLED 卖家反悔 / REJECTED 不符合寄卖 /
+ * OVERRUN_CANCELLED 翻新超预算后卖家拒绝追加并取消寄卖
  */
 export type ConsignmentStatus =
   | 'SUBMITTED'
@@ -29,7 +30,8 @@ export type ConsignmentStatus =
   | 'APPRAISED'
   | 'LISTED'
   | 'CANCELLED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'OVERRUN_CANCELLED';
 
 @Entity('consignments')
 export class Consignment {

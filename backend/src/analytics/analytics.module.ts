@@ -7,6 +7,7 @@ import { Item } from '../entities/item.entity';
 import { Order } from '../entities/order.entity';
 import { Delivery } from '../entities/delivery.entity';
 import { Ticket } from '../entities/ticket.entity';
+import { RefurbishOverrun } from '../entities/refurbish-overrun.entity';
 import { SellerProfile } from '../entities/seller-profile.entity';
 import { User } from '../entities/user.entity';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -195,6 +196,79 @@ export class AnalyticsController {
     }
     return profile;
   }
+
+  /**
+   * 估价师考核：按翻新超预算确认单的估价偏差归因汇总
+   * （APPRAISER_UNDERESTIMATE 现场评估不足计入考核；SELLER_MISDESCRIBE 卖家失真；UNFORESEEABLE 不可预见）
+   */
+  @Roles('OPS', 'ADMIN', 'CS')
+  @Get('appraiser-deviations')
+  async appraiserDeviations() {
+    const overruns = await this.ds.getRepository(RefurbishOverrun).find();
+    const users = await this.ds.getRepository(User).find({
+      where: { role: 'APPRAISER' },
+    });
+    const byAppraiser = new Map<
+      string,
+      {
+        appraiserId: string;
+        appraiserName: string;
+        total: number;
+        underestimate: number;
+        sellerMisdescribe: number;
+        unforeseeable: number;
+        pendingSeller: number;
+        extraTotal: number;
+      }
+    >();
+    users.forEach((u) =>
+      byAppraiser.set(u.id, {
+        appraiserId: u.id,
+        appraiserName: u.name,
+        total: 0,
+        underestimate: 0,
+        sellerMisdescribe: 0,
+        unforeseeable: 0,
+        pendingSeller: 0,
+        extraTotal: 0,
+      }),
+    );
+    overruns.forEach((o) => {
+      let row = byAppraiser.get(o.appraiserId);
+      if (!row) {
+        row = {
+          appraiserId: o.appraiserId,
+          appraiserName: '-',
+          total: 0,
+          underestimate: 0,
+          sellerMisdescribe: 0,
+          unforeseeable: 0,
+          pendingSeller: 0,
+          extraTotal: 0,
+        };
+        byAppraiser.set(o.appraiserId, row);
+      }
+      row.total += 1;
+      row.extraTotal += Number(o.extraTotal);
+      if (o.status === 'PENDING_SELLER') row.pendingSeller += 1;
+      if (o.deviationCategory === 'APPRAISER_UNDERESTIMATE') row.underestimate += 1;
+      else if (o.deviationCategory === 'SELLER_MISDESCRIBE') row.sellerMisdescribe += 1;
+      else row.unforeseeable += 1;
+    });
+    return {
+      appraisers: Array.from(byAppraiser.values())
+        .filter((r) => r.total > 0 || users.some((u) => u.id === r.appraiserId))
+        .map((r) => ({
+          ...r,
+          extraTotal: Math.round(r.extraTotal * 100) / 100,
+          underestimateRatePct: r.total
+            ? Math.round((r.underestimate / r.total) * 1000) / 10
+            : 0,
+        }))
+        .sort((a, b) => b.underestimate - a.underestimate),
+      generatedAt: new Date(),
+    };
+  }
 }
 
 @Module({
@@ -204,6 +278,7 @@ export class AnalyticsController {
       Order,
       Delivery,
       Ticket,
+      RefurbishOverrun,
       SellerProfile,
       User,
     ]),

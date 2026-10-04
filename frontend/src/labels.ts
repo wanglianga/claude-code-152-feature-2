@@ -20,10 +20,12 @@ export const CONSIGNMENT_STATUS: Record<string, { label: string; cls: string }> 
   LISTED: { label: '已上架', cls: 'green' },
   CANCELLED: { label: '卖家反悔', cls: 'red' },
   REJECTED: { label: '拒收', cls: 'gray' },
+  OVERRUN_CANCELLED: { label: '超预算取消寄卖', cls: 'red' },
 };
 
 export const ITEM_STATUS: Record<string, { label: string; cls: string }> = {
   PREPARING: { label: '清洁翻新中', cls: 'amber' },
+  OVERRUN_PENDING: { label: '超预算待卖家确认', cls: 'red' },
   PHOTOGRAPHY: { label: '拍照中', cls: 'cyan' },
   LISTED: { label: '在售', cls: 'green' },
   RESERVED: { label: '已锁定', cls: 'blue' },
@@ -31,6 +33,19 @@ export const ITEM_STATUS: Record<string, { label: string; cls: string }> = {
   DELIVERED: { label: '已交付', cls: 'green' },
   RETURNED: { label: '已退货', cls: 'red' },
   OFF_SHELF: { label: '已下架', cls: 'gray' },
+};
+
+export const OVERRUN_STATUS: Record<string, { label: string; cls: string }> = {
+  PENDING_SELLER: { label: '待卖家确认', cls: 'red' },
+  ACCEPTED: { label: '卖家已接受', cls: 'green' },
+  REJECTED_REDUCE: { label: '拒绝追加·降价上架', cls: 'amber' },
+  REJECTED_CANCEL: { label: '拒绝·取消寄卖', cls: 'gray' },
+};
+
+export const DEVIATION_CATEGORY: Record<string, { label: string; cls: string }> = {
+  SELLER_MISDESCRIBE: { label: '卖家申报失真', cls: 'amber' },
+  APPRAISER_UNDERESTIMATE: { label: '估价师现场低估', cls: 'red' },
+  UNFORESEEABLE: { label: '不可预见（清洁后显现）', cls: 'green' },
 };
 
 export const ORDER_STATUS: Record<string, { label: string; cls: string }> = {

@@ -5,6 +5,7 @@ import {
 } from '../ui';
 import { CATEGORY, ELEVATOR, CONSIGNMENT_STATUS, MATCH_RESULT, ITEM_STATUS, WORK_LOG_TYPE, ORDER_STATUS, TICKET_TYPE, TICKET_STATUS, SETTLEMENT_TYPE } from '../labels';
 import { TicketDetail } from './TicketDetail';
+import { OverrunPanel } from './Overruns';
 
 export function ConsignmentDetail({
   id,
@@ -150,6 +151,11 @@ export function ConsignmentDetail({
             <span className="tag">可配送 {item.deliveryRadiusKm}km{String(item.deliveryRadiusKm) === '0' ? '（仅同城自提）' : ''}</span>
           </h3>
           <p style={{ margin: '4px 0 10px' }}>{item.description || '上架描述待完善'}</p>
+          {item.defectNote && (
+            <div className="banner warn" style={{ marginBottom: 10 }}>
+              翻新后瑕疵说明（买家可见）：{item.defectNote}
+            </div>
+          )}
           <div className="table-wrap">
             <table>
               <thead>
@@ -170,8 +176,21 @@ export function ConsignmentDetail({
           </div>
           <div className="hint">
             已发生：清洁费 <Money v={item.cleaningCost} /> · 翻新费 <Money v={item.refurbishCost} />
+            {Number(item.approvedOverrunCost) > 0 && <> · 卖家已确认追加额度 <Money v={item.approvedOverrunCost} /></>}
           </div>
+          {item.archivedInternalPhotos?.length > 0 && (
+            <div className="hint" style={{ marginTop: 8, color: '#64748b' }}>
+              内部审计归档（翻新前旧照片，买家不可见）：
+              {item.archivedInternalPhotos.map((p: string, i: number) => (
+                <a key={i} href={p} target="_blank" rel="noreferrer" className="tag" style={{ marginLeft: 4 }}>旧照{i + 1}</a>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+
+      {item && (
+        <OverrunPanel itemId={item.id} viewerRole={viewerRole} onChanged={load} />
       )}
 
       <div className="section-title">订单与配送</div>

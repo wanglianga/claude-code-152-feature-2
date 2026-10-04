@@ -380,7 +380,25 @@ export class TicketController {
     const delivery = order
       ? await m.findOne(Delivery, { where: { orderId: order.id } })
       : null;
-    return { ticket, messages, consignment, item, order, delivery };
+    const isBuyer = user?.role === 'BUYER';
+    return {
+      ticket,
+      messages,
+      // 买家侧屏蔽翻新前旧瑕疵照片与内部审计归档
+      consignment:
+        consignment && isBuyer
+          ? { ...consignment, defectPhotos: [] }
+          : consignment,
+      item:
+        item && isBuyer
+          ? (() => {
+              const { archivedInternalPhotos, approvedOverrunCost, ...pub }: any = item;
+              return pub;
+            })()
+          : item,
+      order,
+      delivery,
+    };
   }
 }
 

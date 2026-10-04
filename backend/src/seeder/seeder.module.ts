@@ -8,6 +8,7 @@ import { SellerProfile } from '../entities/seller-profile.entity';
 import { Consignment } from '../entities/consignment.entity';
 import { Appraisal } from '../entities/appraisal.entity';
 import { Item, ItemWorkLog } from '../entities/item.entity';
+import { RefurbishOverrun } from '../entities/refurbish-overrun.entity';
 import { Order } from '../entities/order.entity';
 import { Delivery } from '../entities/delivery.entity';
 import { Ticket, TicketMessage } from '../entities/ticket.entity';
@@ -345,6 +346,137 @@ export class SeederService {
       }),
     );
 
+    // ---------- 样例 6：王阿姨的餐桌，清洁发现划痕比估价严重，超预算待卖家确认 ----------
+    const tableC = await m.save(
+      m.create(Consignment, {
+        code: 'CN202600008', sellerId: byName['wangjiayi'].id,
+        category: 'DINING_TABLE', brand: '源氏木语', sizeText: '140x80x75 cm',
+        material: '白橡木实木', yearsUsed: 4,
+        defectPhotos: ['seed://defect/table-light-scratch.jpg'],
+        disassemblable: true, floor: 3, elevator: 'ELEVATOR',
+        expectedPrice: '1000.00', acceptRefurbish: true,
+        address: '和平小区 3 栋 602', status: 'APPRAISED',
+        verificationLevel: 'NORMAL',
+        sellerNote: '桌面有日常使用轻微划痕，不明显',
+      }),
+    );
+    const tableAppraisal = await m.save(
+      m.create(Appraisal, {
+        consignmentId: tableC.id, appraiserId: byName['gujia'].id,
+        structuralScore: 2, stainScore: 2, odorScore: 1, mothScore: 1, warpScore: 2,
+        moveDifficulty: 2, consignmentPrice: '880.00', minDealPrice: '700.00',
+        commissionRate: '0.1500', estimatedRefurbishCost: '150.00',
+        cleaningAdvice: '桌面轻度抛光打蜡', refurbishSuggestions: '局部补漆即可',
+        matchResult: 'MINOR_DIFF',
+        matchNote: '卖家照片光线较强，现场看划痕比照片略多，按局部补漆估价',
+        createdAt: daysAgo(3),
+      }),
+    );
+    const tableItem = await m.save(
+      m.create(Item, {
+        consignmentId: tableC.id, category: 'DINING_TABLE',
+        title: '源氏木语 1.4m 白橡木实木餐桌',
+        description: '', status: 'OVERRUN_PENDING', location: 'WAREHOUSE',
+        warehouseSlot: 'A-02-07', deliveryRadiusKm: 30,
+        listedPrice: '880.00', minDealPrice: '700.00',
+        cleaningCost: '40.00', refurbishCost: '60.00', approvedOverrunCost: '0.00',
+        photos: [], archivedInternalPhotos: ['seed://defect/table-light-scratch.jpg'],
+        enteredWarehouseAt: daysAgo(2),
+      }),
+    );
+    await m.save(ItemWorkLog, [
+      m.create(ItemWorkLog, { itemId: tableItem.id, assigneeId: byName['fanxin'].id, type: 'CLEANING', note: '桌面深度清洁去油', cost: '40.00', createdAt: daysAgo(2) }),
+      m.create(ItemWorkLog, { itemId: tableItem.id, assigneeId: byName['fanxin'].id, type: 'REPAINT', note: '尝试局部补漆（无法覆盖深层划痕）', cost: '60.00', createdAt: daysAgo(1) }),
+      m.create(ItemWorkLog, { itemId: tableItem.id, assigneeId: byName['cangguan'].id, type: 'STORAGE', note: 'A-02-07', cost: '0.00', createdAt: daysAgo(2) }),
+    ]);
+    await m.save(
+      m.create(RefurbishOverrun, {
+        code: 'RO202600001', consignmentId: tableC.id, itemId: tableItem.id,
+        appraisalId: tableAppraisal.id, appraiserId: byName['gujia'].id,
+        createdById: byName['fanxin'].id, creatorRole: 'REFURBISHER',
+        reason: '仓库清洁时发现餐桌表面划痕比估价时严重：划痕已渗透漆膜且分布于整个桌面，局部补漆无法覆盖，需要整体重新打磨上漆（两底两面）。',
+        discoveryPhotos: ['seed://defect/table-scratch-deep-1.jpg', 'seed://defect/table-scratch-deep-2.jpg'],
+        extraLaborCost: '180.00', extraMaterialCost: '120.00', extraTotal: '300.00',
+        extraSpentCost: '0.00',
+        budgetedRefurbishCost: '150.00', incurredRefurbishCost: '100.00',
+        currentListedPrice: '880.00', suggestedPrice: '850.00',
+        priceImpactNote: '整体打磨上漆后成色明显提升，建议维持 880 上架；若急于出手可按 850 挂牌，预计售价变化约 -3%。',
+        delayDays: 3, listingImpact: 'DELAY',
+        status: 'PENDING_SELLER',
+        deviationCategory: 'APPRAISER_UNDERESTIMATE',
+        deviationNote: '估价现场在卖家强光下未能识别漆面深层划痕，仅按局部补漆估了 150 元；纳入估价师偏差考核，后续实木桌面需在自然光下斜光复检。',
+      }),
+    );
+
+    // ---------- 样例 7：刘静的家电柜，卖家已接受超预算，翻新后重拍上架（旧照仅内部审计） ----------
+    const cabinetC = await m.save(
+      m.create(Consignment, {
+        code: 'CN202600009', sellerId: byName['liujing'].id,
+        category: 'APPLIANCE_CABINET', brand: '林氏木业', sizeText: '120x45x85 cm',
+        material: '颗粒板贴皮', yearsUsed: 3,
+        defectPhotos: ['seed://defect/cabinet-before.jpg'],
+        disassemblable: true, floor: 2, elevator: 'ELEVATOR',
+        expectedPrice: '520.00', acceptRefurbish: true,
+        address: '科技园公寓', status: 'LISTED', verificationLevel: 'NORMAL',
+      }),
+    );
+    const cabinetAppraisal = await m.save(
+      m.create(Appraisal, {
+        consignmentId: cabinetC.id, appraiserId: byName['gujia'].id,
+        structuralScore: 2, stainScore: 3, odorScore: 1, mothScore: 1, warpScore: 2,
+        moveDifficulty: 2, consignmentPrice: '460.00', minDealPrice: '360.00',
+        commissionRate: '0.1500', estimatedRefurbishCost: '80.00',
+        cleaningAdvice: '擦拭清洁', refurbishSuggestions: '边缘轻微封边',
+        matchResult: 'MATCH',
+        matchNote: '与描述基本一致', createdAt: daysAgo(8),
+      }),
+    );
+    const cabinetItem = await m.save(
+      m.create(Item, {
+        consignmentId: cabinetC.id, category: 'APPLIANCE_CABINET',
+        title: '林氏木业 1.2m 餐边家电柜（已整体翻新）',
+        description: '使用 3 年；翻新后贴皮牢固、封边完整，内部层板无受潮。可拆装，电梯房，配送范围 20km。',
+        status: 'LISTED', location: 'WAREHOUSE', warehouseSlot: 'C-04-02',
+        deliveryRadiusKm: 20, listedPrice: '460.00', minDealPrice: '360.00',
+        cleaningCost: '30.00', refurbishCost: '190.00', approvedOverrunCost: '120.00',
+        photos: ['seed://item/cabinet-after-1.jpg', 'seed://item/cabinet-after-2.jpg'],
+        archivedInternalPhotos: [
+          'seed://defect/cabinet-before.jpg',
+          'seed://defect/cabinet-peeling-found.jpg',
+        ],
+        defectNote: '翻新后状态：顶面右侧曾有贴皮起翘，已整体封边打磨，手感平整；背板有一处 2cm 浅痕已补色，不影响使用。',
+        enteredWarehouseAt: daysAgo(7), listedAt: daysAgo(1),
+      }),
+    );
+    const cabinetOverrun = await m.save(
+      m.create(RefurbishOverrun, {
+        code: 'RO202600002', consignmentId: cabinetC.id, itemId: cabinetItem.id,
+        appraisalId: cabinetAppraisal.id, appraiserId: byName['gujia'].id,
+        createdById: byName['cangguan'].id, creatorRole: 'WAREHOUSE',
+        reason: '清洁后贴皮起翘范围扩大（清洁前被油污覆盖不可见），需重新封边并更换部分老化贴皮。',
+        discoveryPhotos: ['seed://defect/cabinet-peeling-found.jpg'],
+        extraLaborCost: '80.00', extraMaterialCost: '40.00', extraTotal: '120.00',
+        extraSpentCost: '110.00',
+        budgetedRefurbishCost: '80.00', incurredRefurbishCost: '80.00',
+        currentListedPrice: '460.00', suggestedPrice: '460.00',
+        priceImpactNote: '翻新后成色与估价时预期一致，维持 460 上架，不影响售价。',
+        delayDays: 2, listingImpact: 'DELAY',
+        status: 'ACCEPTED', deviationCategory: 'UNFORESEEABLE',
+        deviationNote: '起翘被油污覆盖，上门验真时不可见，不纳入估价师考核。',
+        sellerNote: '同意追加预算，尽快翻新上架。',
+        sellerDecidedAt: daysAgo(5), photoCompletedAt: daysAgo(2),
+        createdAt: daysAgo(6),
+      }),
+    );
+    await m.save(ItemWorkLog, [
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['fanxin'].id, type: 'CLEANING', note: '除油清洁', cost: '30.00', createdAt: daysAgo(7) }),
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['fanxin'].id, type: 'REPAIR', note: '边缘封边（估价预算内）', cost: '80.00', createdAt: daysAgo(6) }),
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['fanxin'].id, type: 'REPAIR', note: `追加翻新：贴皮更换+封边（确认单 ${cabinetOverrun.code}，卖家已确认）`, cost: '110.00', createdAt: daysAgo(4) }),
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['cangguan'].id, type: 'STORAGE', note: 'C-04-02', cost: '0.00', createdAt: daysAgo(7) }),
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['cangguan'].id, type: 'PHOTOGRAPHY', note: `翻新后重新拍摄 2 张并更新瑕疵说明；翻新前旧照片已归档内部审计（确认单 ${cabinetOverrun.code}）`, cost: '0.00', createdAt: daysAgo(2) }),
+      m.create(ItemWorkLog, { itemId: cabinetItem.id, assigneeId: byName['cangguan'].id, type: 'LISTING_COPY', note: '上架描述', cost: '0.00', createdAt: daysAgo(1) }),
+    ]);
+
     // eslint-disable-next-line no-console
     console.log('[seed] 演示数据已写入');
   }
@@ -354,6 +486,7 @@ export class SeederService {
   imports: [
     TypeOrmModule.forFeature([
       User, SellerProfile, Consignment, Appraisal, Item, ItemWorkLog,
+      RefurbishOverrun,
       Order, Delivery, Ticket, TicketMessage, Settlement, SettlementEntry,
     ]),
   ],

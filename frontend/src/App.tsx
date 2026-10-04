@@ -10,6 +10,7 @@ import { WarehouseView } from './views/Warehouse';
 import { DeliveryView } from './views/Delivery';
 import { CsView } from './views/Cs';
 import { OpsView } from './views/Ops';
+import { SellerOverrunsView } from './views/Overruns';
 
 interface TabDef {
   key: string;
@@ -20,10 +21,11 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'seller', label: '我的寄卖', roles: ['SELLER'], render: (u, go) => <SellerView user={u} go={go} /> },
+  { key: 'seller-overruns', label: '翻新预算确认', roles: ['SELLER'], render: () => <SellerOverrunsView /> },
   { key: 'market', label: '寄卖市场', roles: ['BUYER'], render: () => <BuyerView mode="market" /> },
   { key: 'my-orders', label: '我的订单/售后', roles: ['BUYER'], render: () => <BuyerView mode="orders" /> },
   { key: 'appraisal', label: '上门估价', roles: ['APPRAISER'], render: () => <AppraiserView /> },
-  { key: 'warehouse', label: '翻新上架', roles: ['WAREHOUSE', 'REFURBISHER'], render: (u) => <WarehouseView user={u} /> },
+  { key: 'warehouse', label: '翻新上架', roles: ['WAREHOUSE', 'REFURBISHER', 'OPS', 'ADMIN'], render: (u) => <WarehouseView user={u} /> },
   { key: 'delivery', label: '配送调度', roles: ['DELIVERY'], render: () => <DeliveryView /> },
   { key: 'tickets', label: '协同工单', roles: ['CS', 'ADMIN'], render: () => <CsView mode="tickets" /> },
   { key: 'settlements', label: '结算单', roles: ['CS', 'OPS', 'ADMIN'], render: () => <CsView mode="settlements" /> },

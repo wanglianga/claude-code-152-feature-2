@@ -66,6 +66,11 @@ function Market() {
                 {it.description?.slice(0, 56) || ''}
                 {it.description?.length > 56 ? '…' : ''}
               </p>
+              {it.defectNote && (
+                <div className="hint" style={{ marginBottom: 8, color: '#92400e' }}>
+                  翻新后实物状态：{it.defectNote.length > 40 ? `${it.defectNote.slice(0, 40)}…` : it.defectNote}
+                </div>
+              )}
               <button className="btn sm" style={{ width: '100%' }} onClick={() => setBuyItem(it)}>
                 立即下单
               </button>
@@ -136,6 +141,11 @@ function BuyModal({ item, onClose, onDone }: { item: any; onClose: () => void; o
       <div className="banner info">
         寄卖价 <Money v={item.listedPrice} />，最低成交价 <Money v={item.minDealPrice} />，出价不可低于底价。
       </div>
+      {item.defectNote && (
+        <div className="banner warn">
+          翻新后实物状态（如实披露）：{item.defectNote}
+        </div>
+      )}
       <div className="row2">
         <Field label="成交出价（元）">
           <input type="number" value={f.dealPrice} onChange={(e) => set('dealPrice', +e.target.value)} />

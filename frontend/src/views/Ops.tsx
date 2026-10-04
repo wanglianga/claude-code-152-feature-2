@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Money, Empty } from '../ui';
-import { TICKET_TYPE, FAIL_REASON } from '../labels';
+import { TICKET_TYPE, FAIL_REASON, DEVIATION_CATEGORY } from '../labels';
 
 export function OpsView() {
   const [data, setData] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [deviations, setDeviations] = useState<any>(null);
 
   useEffect(() => {
     api('/analytics/by-category').then(setData);
     api('/analytics/seller-profiles').then(setProfiles);
+    api('/analytics/appraiser-deviations').then(setDeviations).catch(() => {});
   }, []);
 
   if (!data) return <div className="empty">加载中…</div>;
@@ -125,6 +127,47 @@ export function OpsView() {
       </div>
       <div className="hint" style={{ marginTop: 10 }}>
         风险分 = 反悔次数×3 + 描述不符×2 + 售后争议×1 − 成交数×0.5；≥4 分或描述不符 ≥2 次，新寄卖自动进入严格上门验真。
+      </div>
+
+      <div className="section-title">估价师估价偏差考核（翻新超预算归因）</div>
+      <div className="card" style={{ padding: 0 }}>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>估价师</th><th>超预算单数</th><th>现场低估</th><th>卖家申报失真</th>
+                <th>不可预见</th><th>低估占比</th><th>追加预算合计</th><th>待卖家确认</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!deviations || deviations.appraisers.length === 0 ? (
+                <tr><td colSpan={8}><Empty text="暂无估价偏差记录" /></td></tr>
+              ) : (
+                deviations.appraisers.map((a: any) => (
+                  <tr key={a.appraiserId}>
+                    <td><b>{a.appraiserName}</b></td>
+                    <td>{a.total}</td>
+                    <td>
+                      <span className={a.underestimate > 0 ? 'money-out' : ''}>{a.underestimate}</span>
+                      <div className="hint">
+                        {DEVIATION_CATEGORY.APPRAISER_UNDERESTIMATE.label}
+                      </div>
+                    </td>
+                    <td>{a.sellerMisdescribe}<div className="hint">{DEVIATION_CATEGORY.SELLER_MISDESCRIBE.label}</div></td>
+                    <td>{a.unforeseeable}<div className="hint">{DEVIATION_CATEGORY.UNFORESEEABLE.label}</div></td>
+                    <td className={a.underestimateRatePct >= 30 ? 'money-out' : ''}>{a.underestimateRatePct}%</td>
+                    <td><Money v={a.extraTotal} /></td>
+                    <td>{a.pendingSeller}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="hint" style={{ marginTop: 10 }}>
+        数据来源：翻新超预算确认单的估价偏差归因（仓库发起时初判，运营可在单据上复核调整）；
+        「现场低估」占比与追加预算金额作为估价师考核依据，「不可预见」不纳入考核。
       </div>
     </div>
   );
