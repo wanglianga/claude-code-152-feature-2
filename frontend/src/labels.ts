@@ -138,3 +138,10 @@ export const SETTLEMENT_TYPE: Record<string, string> = {
   COMPENSATION: '售后赔付/退款',
   SELLER_PAYOUT: '卖家应得',
 };
+
+export const OVERRUN_STATUS: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: '待卖家确认', cls: 'amber' },
+  ACCEPTED: { label: '卖家已接受', cls: 'green' },
+  REJECTED_REDUCE: { label: '已拒绝·降价上架', cls: 'cyan' },
+  REJECTED_CANCEL: { label: '已拒绝·取消寄卖', cls: 'red' },
+};

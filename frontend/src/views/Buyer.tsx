@@ -66,6 +66,11 @@ function Market() {
                 {it.description?.slice(0, 56) || ''}
                 {it.description?.length > 56 ? '…' : ''}
               </p>
+              {it.defectNote && (
+                <div className="hint" style={{ marginBottom: 8, fontSize: 12 }}>
+                  翻新后成色说明：{it.defectNote}
+                </div>
+              )}
               <button className="btn sm" style={{ width: '100%' }} onClick={() => setBuyItem(it)}>
                 立即下单
               </button>

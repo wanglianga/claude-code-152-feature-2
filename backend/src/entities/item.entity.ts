@@ -76,6 +76,29 @@ export class Item {
   @Column({ type: 'jsonb', default: () => "'[]'" })
   photos: string[];
 
+  /**
+   * 翻新前旧照片归档：仅内部审计可见，买家/卖家不可见。
+   * 翻新完成重新拍摄后，原 photos 被移入此处。
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  archivedPhotos: string[];
+
+  /**
+   * 当前对外瑕疵说明（翻新后的真实状态），买家看到的内容。
+   */
+  @Column({ type: 'text', default: '' })
+  defectNote: string;
+
+  /**
+   * 翻新前瑕疵说明归档：仅保留在内部审计记录中。
+   */
+  @Column({ type: 'text', default: '' })
+  archivedDefectNote: string;
+
+  /** 最近一次翻新（含超预算追加作业）完成时间 */
+  @Column({ type: 'timestamptz', nullable: true })
+  refurbishedAt: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   enteredWarehouseAt: Date | null;
 

@@ -31,6 +31,14 @@ export type ConsignmentStatus =
   | 'CANCELLED'
   | 'REJECTED';
 
+/**
+ * 取消原因：SELLER_BACKTRACK 卖家主动反悔（计入画像）；
+ * OVERRUN_REJECTED 卖家不接受翻新超预算追加费用而取消（平台估价偏差，不计反悔）
+ */
+export type ConsignmentCancelReason =
+  | 'SELLER_BACKTRACK'
+  | 'OVERRUN_REJECTED';
+
 @Entity('consignments')
 export class Consignment {
   @PrimaryGeneratedColumn('uuid')
@@ -86,6 +94,10 @@ export class Consignment {
   @Index()
   @Column({ type: 'varchar', length: 24, default: 'SUBMITTED' })
   status: ConsignmentStatus;
+
+  /** 取消原因（仅 status=CANCELLED 时有值）：卖家反悔 / 不接受翻新超预算 */
+  @Column({ type: 'varchar', length: 24, nullable: true })
+  cancelReason: ConsignmentCancelReason | null;
 
   /** 提交申请时系统给出的上门验真等级（引用卖家历史画像）：NORMAL / STRICT */
   @Column({ type: 'varchar', length: 16, default: 'NORMAL' })

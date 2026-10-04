@@ -17,6 +17,7 @@ import { Item } from '../entities/item.entity';
 import { Appraisal } from '../entities/appraisal.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { Consignment } from '../entities/consignment.entity';
+import { RefurbishOverrunConfirmation } from '../entities/refurbish-confirmation.entity';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 
@@ -87,6 +88,22 @@ export class SettlementController {
       const returned = order.status === 'RETURNED';
       const refurb = Number(item.cleaningCost) + Number(item.refurbishCost);
 
+      // 卖家已接受的超预算确认单：追加费用来源（从成交款扣除）
+      const acceptedOverruns = await m.find(RefurbishOverrunConfirmation, {
+        where: { itemId: item.id, status: 'ACCEPTED' },
+        order: { createdAt: 'ASC' },
+      });
+      const overrunExtra = acceptedOverruns.reduce(
+        (s, o) =>
+          s + Number(o.additionalLaborCost) + Number(o.additionalMaterialCost),
+        0,
+      );
+      const overrunRef = acceptedOverruns.length
+        ? `；含超预算追加 ¥${money(overrunExtra)}（来源：卖家已接受确认单 ${acceptedOverruns
+            .map((o) => o.code)
+            .join('、')}，工时+材料）`
+        : '';
+
       let storageDays = 0;
       if (item.enteredWarehouseAt) {
         storageDays = Math.max(
@@ -147,7 +164,7 @@ export class SettlementController {
           add(
             'REFURBISH_FEE',
             refurb,
-            `清洁 ¥${item.cleaningCost} + 翻新 ¥${item.refurbishCost}（来源：商品作业记录；退货由平台吸收）`,
+            `清洁 ¥${item.cleaningCost} + 翻新 ¥${item.refurbishCost}（来源：商品作业记录；退货由平台吸收）${overrunRef}`,
           );
         }
         if (storageFee > 0) {
@@ -177,7 +194,7 @@ export class SettlementController {
           add(
             'REFURBISH_FEE',
             refurb,
-            `清洁费 ¥${item.cleaningCost} + 翻新费 ¥${item.refurbishCost}（来源：仓库/翻新师作业记录，从卖家应得扣除）`,
+            `清洁费 ¥${item.cleaningCost} + 翻新费 ¥${item.refurbishCost}（来源：仓库/翻新师作业记录，从卖家应得扣除）${overrunRef}`,
           );
         }
         if (storageFee > 0) {
@@ -261,6 +278,7 @@ export class SettlementController {
       Appraisal,
       Ticket,
       Consignment,
+      RefurbishOverrunConfirmation,
     ]),
   ],
   controllers: [SettlementController],

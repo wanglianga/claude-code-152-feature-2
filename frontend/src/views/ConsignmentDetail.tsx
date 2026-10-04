@@ -3,8 +3,10 @@ import { api } from '../api';
 import {
   Badge, Money, Empty, ScoreDots, toast,
 } from '../ui';
-import { CATEGORY, ELEVATOR, CONSIGNMENT_STATUS, MATCH_RESULT, ITEM_STATUS, WORK_LOG_TYPE, ORDER_STATUS, TICKET_TYPE, TICKET_STATUS, SETTLEMENT_TYPE } from '../labels';
+import { CATEGORY, ELEVATOR, CONSIGNMENT_STATUS, MATCH_RESULT, ITEM_STATUS, WORK_LOG_TYPE, ORDER_STATUS, TICKET_TYPE, TICKET_STATUS, SETTLEMENT_TYPE, OVERRUN_STATUS } from '../labels';
 import { TicketDetail } from './TicketDetail';
+
+const INTERNAL_ROLES = ['WAREHOUSE', 'REFURBISHER', 'CS', 'OPS', 'ADMIN', 'APPRAISER', 'DELIVERY'];
 
 export function ConsignmentDetail({
   id,
@@ -51,6 +53,8 @@ export function ConsignmentDetail({
   const a = c.appraisal || itemDetail?.appraisal || null;
   const item = itemDetail?.item || null;
   const logs = itemDetail?.workLogs || [];
+  const overruns = itemDetail?.overrunConfirmations || [];
+  const internal = INTERNAL_ROLES.includes(viewerRole);
   const relatedOrders = orders.filter((o) => o.consignmentId === id);
   const relatedTickets = tickets.filter((t) => t.consignmentId === id);
 
@@ -150,6 +154,35 @@ export function ConsignmentDetail({
             <span className="tag">可配送 {item.deliveryRadiusKm}km{String(item.deliveryRadiusKm) === '0' ? '（仅同城自提）' : ''}</span>
           </h3>
           <p style={{ margin: '4px 0 10px' }}>{item.description || '上架描述待完善'}</p>
+          {item.defectNote && (
+            <div className="banner info" style={{ marginBottom: 10 }}>
+              <b>翻新后瑕疵说明（买家所见真实状态）</b>
+              <div style={{ marginTop: 4 }}>{item.defectNote}</div>
+            </div>
+          )}
+          {item.photos?.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <b>当前照片（翻新后）：</b>{' '}
+              {item.photos.map((p: string, i: number) => (
+                <a key={i} href={p} target="_blank" rel="noreferrer" className="tag">照片{i + 1}</a>
+              ))}
+            </div>
+          )}
+          {internal && item.archivedPhotos?.length > 0 && (
+            <div className="banner warn" style={{ marginBottom: 10 }}>
+              <b>内部审计 · 翻新前旧照片（买家/卖家不可见）</b>
+              <div style={{ marginTop: 4 }}>
+                {item.archivedPhotos.map((p: string, i: number) => (
+                  <a key={i} href={p} target="_blank" rel="noreferrer" className="tag">旧照片{i + 1}</a>
+                ))}
+              </div>
+              {item.archivedDefectNote && (
+            <div className="hint" style={{ color: 'inherit', marginTop: 6 }}>
+              旧瑕疵说明：{item.archivedDefectNote}
+            </div>
+          )}
+        </div>
+      )}
           <div className="table-wrap">
             <table>
               <thead>
@@ -171,6 +204,35 @@ export function ConsignmentDetail({
           <div className="hint">
             已发生：清洁费 <Money v={item.cleaningCost} /> · 翻新费 <Money v={item.refurbishCost} />
           </div>
+          {overruns.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <b>翻新成本超预算确认</b>
+              <div className="table-wrap" style={{ marginTop: 6 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>单号</th><th>新增工时</th><th>新增材料</th><th>售价变化</th>
+                      <th>上架影响</th><th>状态</th>
+                      {internal && <th>估价偏差原因（考核）</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overruns.map((o: any) => (
+                      <tr key={o.id}>
+                        <td>{o.code}</td>
+                        <td><Money v={o.additionalLaborCost} /></td>
+                        <td><Money v={o.additionalMaterialCost} /></td>
+                        <td><Money v={o.currentListedPrice} /> → <Money v={o.revisedListedPrice} /></td>
+                        <td>{o.affectListing ? `延后约 ${o.listingDelayDays} 天` : '不影响'}</td>
+                        <td><Badge map={OVERRUN_STATUS} value={o.status} /></td>
+                        {internal && <td className="muted">{o.deviationReason || '-'}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

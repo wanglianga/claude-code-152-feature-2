@@ -9,6 +9,7 @@ import { Delivery } from '../entities/delivery.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { SellerProfile } from '../entities/seller-profile.entity';
 import { User } from '../entities/user.entity';
+import { RefurbishOverrunConfirmation } from '../entities/refurbish-confirmation.entity';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 
@@ -195,6 +196,95 @@ export class AnalyticsController {
     }
     return profile;
   }
+
+  /**
+   * 估价师考核：翻新成本超预算（估价偏差）记录。
+   * 每条确认单保留估价偏差原因，按估价师聚合偏差次数、
+   * 追加成本均值与卖家接受/降价/取消分布。
+   */
+  @Roles('OPS', 'ADMIN')
+  @Get('appraiser-deviations')
+  async appraiserDeviations() {
+    const overruns = await this.ds
+      .getRepository(RefurbishOverrunConfirmation)
+      .find({ order: { createdAt: 'DESC' } });
+    const appraiserIds = Array.from(new Set(overruns.map((o) => o.appraiserId)));
+    const appraisers = appraiserIds.length
+      ? await this.ds.getRepository(User).find({ where: { id: In(appraiserIds) } })
+      : [];
+    const nameMap = new Map(appraisers.map((u) => [u.id, u]));
+
+    const byAppraiser = new Map<
+      string,
+      {
+        appraiserId: string;
+        appraiserName: string;
+        username: string;
+        overrunCount: number;
+        acceptedCount: number;
+        reducedCount: number;
+        cancelledCount: number;
+        totalExtraCost: number;
+        avgExtraCost: number;
+        records: any[];
+      }
+    >();
+
+    overruns.forEach((o) => {
+      const extra =
+        Number(o.additionalLaborCost) + Number(o.additionalMaterialCost);
+      let row = byAppraiser.get(o.appraiserId);
+      if (!row) {
+        row = {
+          appraiserId: o.appraiserId,
+          appraiserName: nameMap.get(o.appraiserId)?.name || '-',
+          username: nameMap.get(o.appraiserId)?.username || '-',
+          overrunCount: 0,
+          acceptedCount: 0,
+          reducedCount: 0,
+          cancelledCount: 0,
+          totalExtraCost: 0,
+          avgExtraCost: 0,
+          records: [],
+        };
+        byAppraiser.set(o.appraiserId, row);
+      }
+      row.overrunCount += 1;
+      row.totalExtraCost = Math.round((row.totalExtraCost + extra) * 100) / 100;
+      if (o.status === 'ACCEPTED') row.acceptedCount += 1;
+      if (o.status === 'REJECTED_REDUCE') row.reducedCount += 1;
+      if (o.status === 'REJECTED_CANCEL') row.cancelledCount += 1;
+      row.records.push({
+        code: o.code,
+        itemId: o.itemId,
+        reason: o.reason,
+        deviationReason: o.deviationReason,
+        estimatedRefurbishCost: Number(o.estimatedRefurbishCost),
+        extraCost: Math.round(extra * 100) / 100,
+        priceChange:
+          Math.round(
+            (Number(o.revisedListedPrice) - Number(o.currentListedPrice)) * 100,
+          ) / 100,
+        status: o.status,
+        createdAt: o.createdAt,
+      });
+    });
+
+    const appraisers2 = Array.from(byAppraiser.values()).map((r) => ({
+      ...r,
+      avgExtraCost:
+        r.overrunCount > 0
+          ? Math.round((r.totalExtraCost / r.overrunCount) * 100) / 100
+          : 0,
+    }));
+    return {
+      appraisers: appraisers2.sort(
+        (a, b) => b.overrunCount - a.overrunCount,
+      ),
+      totalOverruns: overruns.length,
+      generatedAt: new Date(),
+    };
+  }
 }
 
 @Module({
@@ -206,6 +296,7 @@ export class AnalyticsController {
       Ticket,
       SellerProfile,
       User,
+      RefurbishOverrunConfirmation,
     ]),
   ],
   controllers: [AnalyticsController],

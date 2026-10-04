@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Money, Empty } from '../ui';
-import { TICKET_TYPE, FAIL_REASON } from '../labels';
+import { TICKET_TYPE, FAIL_REASON, OVERRUN_STATUS } from '../labels';
 
 export function OpsView() {
   const [data, setData] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [deviations, setDeviations] = useState<any>(null);
 
   useEffect(() => {
     api('/analytics/by-category').then(setData);
     api('/analytics/seller-profiles').then(setProfiles);
+    api('/analytics/appraiser-deviations').then(setDeviations).catch(() => {});
   }, []);
 
   if (!data) return <div className="empty">加载中…</div>;
@@ -126,6 +128,95 @@ export function OpsView() {
       <div className="hint" style={{ marginTop: 10 }}>
         风险分 = 反悔次数×3 + 描述不符×2 + 售后争议×1 − 成交数×0.5；≥4 分或描述不符 ≥2 次，新寄卖自动进入严格上门验真。
       </div>
+
+      <div className="section-title">估价师估价偏差考核（翻新成本超预算）</div>
+      {!deviations ? (
+        <div className="card"><Empty text="加载中…" /></div>
+      ) : deviations.appraisers.length === 0 ? (
+        <div className="card"><Empty text="暂无翻新超预算记录" /></div>
+      ) : (
+        <>
+          <div className="grid grid-4" style={{ marginBottom: 14 }}>
+            <div className="card stat">
+              <div className="l">超预算确认单总数</div>
+              <div className="v">{deviations.totalOverruns}</div>
+            </div>
+            <div className="card stat">
+              <div className="l">涉及估价师</div>
+              <div className="v">{deviations.appraisers.length}</div>
+            </div>
+            <div className="card stat">
+              <div className="l">卖家接受率</div>
+              <div className="v">
+                {deviations.totalOverruns
+                  ? Math.round(
+                      (deviations.appraisers.reduce((s: number, a: any) => s + a.acceptedCount, 0) /
+                        deviations.totalOverruns) *
+                        100,
+                    )
+                  : 0}
+                %
+              </div>
+            </div>
+            <div className="card stat">
+              <div className="l">取消寄卖数</div>
+              <div className="v">
+                {deviations.appraisers.reduce((s: number, a: any) => s + a.cancelledCount, 0)}
+              </div>
+            </div>
+          </div>
+          <div className="grid">
+            {deviations.appraisers.map((ap: any) => (
+              <div className="card" key={ap.appraiserId}>
+                <h3>
+                  {ap.appraiserName}
+                  <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>{ap.username}</span>
+                  <span style={{ float: 'right' }} className="money-out">
+                    偏差 {ap.overrunCount} 次
+                  </span>
+                </h3>
+                <dl className="kv">
+                  <dt>追加成本合计</dt><dd><Money v={ap.totalExtraCost} /></dd>
+                  <dt>单次平均追加</dt><dd><Money v={ap.avgExtraCost} /></dd>
+                  <dt>卖家接受 / 降价 / 取消</dt>
+                  <dd>{ap.acceptedCount} / {ap.reducedCount} / {ap.cancelledCount}</dd>
+                </dl>
+                <div className="table-wrap" style={{ marginTop: 8 }}>
+                  <table>
+                    <thead>
+                      <tr><th>确认单</th><th>追加</th><th>售价变化</th><th>结果</th><th>估价偏差原因</th></tr>
+                    </thead>
+                    <tbody>
+                      {ap.records.map((r: any) => (
+                        <tr key={r.code}>
+                          <td>{r.code}</td>
+                          <td><Money v={r.extraCost} /></td>
+                          <td className={r.priceChange >= 0 ? 'money-in' : 'money-out'}>
+                            {r.priceChange >= 0 ? '+' : ''}{r.priceChange.toFixed(2)}
+                          </td>
+                          <td>
+                            {OVERRUN_STATUS[r.status]?.label || r.status}
+                          </td>
+                          <td className="muted" style={{ maxWidth: 280 }}>
+                            <div>{r.reason}</div>
+                            {r.deviationReason && (
+                              <div className="hint" style={{ color: '#b45309' }}>考核留档：{r.deviationReason}</div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hint" style={{ marginTop: 10 }}>
+            估价偏差原因在仓库发起超预算确认时填写，平台保留用于考核估价师；卖家端不可见。
+            卖家因不接受超预算而取消寄卖的，不计入卖家反悔画像。
+          </div>
+        </>
+      )}
     </div>
   );
 }

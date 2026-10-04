@@ -12,6 +12,7 @@ import { Order } from '../entities/order.entity';
 import { Delivery } from '../entities/delivery.entity';
 import { Ticket, TicketMessage } from '../entities/ticket.entity';
 import { Settlement, SettlementEntry } from '../entities/settlement.entity';
+import { RefurbishOverrunConfirmation } from '../entities/refurbish-confirmation.entity';
 
 const hash = (p: string) => bcrypt.hashSync(p, 10);
 const daysAgo = (d: number) => new Date(Date.now() - d * 86400000);
@@ -345,6 +346,123 @@ export class SeederService {
       }),
     );
 
+    // ---------- 样例 6：王阿姨的实木餐桌，清洁发现划痕比估价严重 → 超预算确认待卖家确认 ----------
+    const tableC = await m.save(
+      m.create(Consignment, {
+        code: 'CN202600008', sellerId: byName['wangjiayi'].id,
+        category: 'DINING_TABLE', brand: '源氏木语', sizeText: '140x80x75 cm',
+        material: '白橡木实木', yearsUsed: 4,
+        defectPhotos: ['seed://defect/table-light-scratch.jpg'],
+        disassemblable: true, floor: 3, elevator: 'ELEVATOR',
+        expectedPrice: '900.00', acceptRefurbish: true,
+        address: '和平小区 3 栋 602', status: 'APPRAISED', verificationLevel: 'NORMAL',
+        sellerNote: '桌面有轻微使用痕迹，铺桌垫基本看不出',
+      }),
+    );
+    const tableAppr = await m.save(
+      m.create(Appraisal, {
+        consignmentId: tableC.id, appraiserId: byName['gujia'].id,
+        structuralScore: 2, stainScore: 2, odorScore: 1, mothScore: 1, warpScore: 2,
+        moveDifficulty: 3, consignmentPrice: '780.00', minDealPrice: '620.00',
+        commissionRate: '0.1500', estimatedRefurbishCost: '80.00',
+        cleaningAdvice: '桌面木面清洁打蜡', refurbishSuggestions: '轻度抛光即可',
+        matchResult: 'MINOR_DIFF',
+        matchNote: '桌面有桌垫覆盖，估价时未发现深层划痕',
+        createdAt: daysAgo(3),
+      }),
+    );
+    void tableAppr;
+    const tableItem = await m.save(
+      m.create(Item, {
+        consignmentId: tableC.id, category: 'DINING_TABLE',
+        title: '源氏木语 1.4m 白橡木实木餐桌',
+        description: '', status: 'PREPARING', location: 'WAREHOUSE',
+        warehouseSlot: 'B-04-02', deliveryRadiusKm: 30,
+        listedPrice: '780.00', minDealPrice: '620.00',
+        cleaningCost: '40.00', refurbishCost: '40.00',
+        enteredWarehouseAt: daysAgo(2),
+      }),
+    );
+    await m.save(ItemWorkLog, [
+      m.create(ItemWorkLog, { itemId: tableItem.id, assigneeId: byName['fanxin'].id, type: 'CLEANING', note: '掀开桌垫深度清洁', cost: '40.00', createdAt: daysAgo(2) }),
+      m.create(ItemWorkLog, { itemId: tableItem.id, assigneeId: byName['fanxin'].id, type: 'REPAINT', note: '局部补漆（估价范围内）', cost: '40.00', createdAt: daysAgo(1) }),
+    ]);
+    await m.save(
+      m.create(RefurbishOverrunConfirmation, {
+        code: 'OC202600001', itemId: tableItem.id, consignmentId: tableC.id,
+        appraiserId: byName['gujia'].id,
+        createdById: byName['cangguan'].id, creatorRole: 'WAREHOUSE',
+        reason: '清洁掀开桌垫后发现餐桌表面划痕比估价时严重，存在多处贯穿性划痕已伤及漆面，局部补漆无法覆盖，需要整体重新打磨、补腻子并上木蜡油两遍。',
+        estimatedRefurbishCost: '80.00', incurredRefurbishCost: '40.00',
+        additionalLaborCost: '150.00', additionalMaterialCost: '60.00',
+        currentListedPrice: '780.00', revisedListedPrice: '860.00',
+        affectListing: true, listingDelayDays: 3,
+        beforePhotos: ['seed://overrun/table-deep-scratch-1.jpg', 'seed://overrun/table-deep-scratch-2.jpg'],
+        deviationReason: '估价时桌面铺有厚桌垫且室内灯光昏暗，估价师未掀开桌垫检查，逆光侧才可见贯穿性划痕；上门验真应增加“移除覆盖物后逆光检查”动作。',
+        status: 'PENDING', createdAt: daysAgo(1),
+      }),
+    );
+
+    // ---------- 样例 7：刘静的餐桌，卖家已接受超预算，翻新后重拍上架（买家只见翻新后状态） ----------
+    const table2C = await m.save(
+      m.create(Consignment, {
+        code: 'CN202600009', sellerId: byName['liujing'].id,
+        category: 'DINING_TABLE', brand: '全友家居', sizeText: '130x75x75 cm',
+        material: '橡胶木实木', yearsUsed: 3, defectPhotos: [],
+        disassemblable: true, floor: 2, elevator: 'ELEVATOR',
+        expectedPrice: '700.00', acceptRefurbish: true,
+        status: 'LISTED', verificationLevel: 'NORMAL',
+      }),
+    );
+    await m.save(
+      m.create(Appraisal, {
+        consignmentId: table2C.id, appraiserId: byName['gujia'].id,
+        structuralScore: 2, stainScore: 3, odorScore: 1, mothScore: 1, warpScore: 1,
+        moveDifficulty: 2, consignmentPrice: '560.00', minDealPrice: '450.00',
+        commissionRate: '0.1500', estimatedRefurbishCost: '100.00',
+        cleaningAdvice: '清洁去污', refurbishSuggestions: '局部补漆',
+        matchResult: 'MINOR_DIFF',
+        matchNote: '桌面热饮杯印比照片明显', createdAt: daysAgo(8),
+      }),
+    );
+    const table2 = await m.save(
+      m.create(Item, {
+        consignmentId: table2C.id, category: 'DINING_TABLE',
+        title: '全友 1.3m 橡胶木餐桌（已整体翻新）',
+        description: '已完成整体打磨上漆，桌面平整光泽均匀，结构稳固。可拆装，配送范围 20km。',
+        defectNote: '桌面已整体打磨重新上漆，靠窗侧光下仍可见极浅使用痕迹；一条桌腿内侧有补漆，颜色基本一致。',
+        archivedDefectNote: '翻新前：桌面多处热饮杯印与划痕，局部漆面发白。',
+        status: 'LISTED', location: 'WAREHOUSE', warehouseSlot: 'B-04-05',
+        deliveryRadiusKm: 20, listedPrice: '620.00', minDealPrice: '500.00',
+        cleaningCost: '40.00', refurbishCost: '290.00',
+        photos: ['seed://item/table2-after-1.jpg', 'seed://item/table2-after-2.jpg'],
+        archivedPhotos: ['seed://item/table2-before-1.jpg', 'seed://item/table2-before-2.jpg'],
+        enteredWarehouseAt: daysAgo(8), refurbishedAt: daysAgo(4), listedAt: daysAgo(3),
+      }),
+    );
+    await m.save(ItemWorkLog, [
+      m.create(ItemWorkLog, { itemId: table2.id, assigneeId: byName['fanxin'].id, type: 'CLEANING', note: '清洁去污', cost: '40.00', createdAt: daysAgo(7) }),
+      m.create(ItemWorkLog, { itemId: table2.id, assigneeId: byName['fanxin'].id, type: 'REPAINT', note: '估价范围内局部补漆', cost: '100.00', createdAt: daysAgo(6) }),
+      m.create(ItemWorkLog, { itemId: table2.id, assigneeId: byName['fanxin'].id, type: 'REPAINT', note: '超预算追加翻新（确认单 OC202600002，卖家已接受）：工时费 ¥120.00 + 材料费 ¥70.00', cost: '190.00', createdAt: daysAgo(5) }),
+      m.create(ItemWorkLog, { itemId: table2.id, assigneeId: byName['cangguan'].id, type: 'PHOTOGRAPHY', note: '翻新完成后重新拍摄，已更新瑕疵说明；旧照片转入内部审计归档', cost: '0.00', createdAt: daysAgo(4) }),
+    ]);
+    await m.save(
+      m.create(RefurbishOverrunConfirmation, {
+        code: 'OC202600002', itemId: table2.id, consignmentId: table2C.id,
+        appraiserId: byName['gujia'].id,
+        createdById: byName['cangguan'].id, creatorRole: 'WAREHOUSE',
+        reason: '清洁后发现桌面热饮杯印已渗漆，局部补漆会有色差，需要整体打磨上漆。',
+        estimatedRefurbishCost: '100.00', incurredRefurbishCost: '100.00',
+        additionalLaborCost: '120.00', additionalMaterialCost: '70.00',
+        currentListedPrice: '560.00', revisedListedPrice: '620.00',
+        affectListing: true, listingDelayDays: 2,
+        beforePhotos: ['seed://overrun/table2-cup-mark.jpg'],
+        deviationReason: '估价在夜间黄光下进行，杯印发白与木色接近未被识别；建议强光手电侧照复查漆面。',
+        status: 'ACCEPTED', sellerDecisionNote: '同意整体翻新，希望赶在周末前上架。',
+        sellerDecidedAt: daysAgo(5), createdAt: daysAgo(6),
+      }),
+    );
+
     // eslint-disable-next-line no-console
     console.log('[seed] 演示数据已写入');
   }
@@ -355,6 +473,7 @@ export class SeederService {
     TypeOrmModule.forFeature([
       User, SellerProfile, Consignment, Appraisal, Item, ItemWorkLog,
       Order, Delivery, Ticket, TicketMessage, Settlement, SettlementEntry,
+      RefurbishOverrunConfirmation,
     ]),
   ],
   providers: [SeederService],

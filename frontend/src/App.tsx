@@ -10,6 +10,7 @@ import { WarehouseView } from './views/Warehouse';
 import { DeliveryView } from './views/Delivery';
 import { CsView } from './views/Cs';
 import { OpsView } from './views/Ops';
+import { SellerOverrunList } from './views/Overrun';
 
 interface TabDef {
   key: string;
@@ -20,6 +21,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'seller', label: '我的寄卖', roles: ['SELLER'], render: (u, go) => <SellerView user={u} go={go} /> },
+  { key: 'seller-overrun', label: '翻新预算确认', roles: ['SELLER'], render: (u) => <SellerOverrunList user={u} /> },
   { key: 'market', label: '寄卖市场', roles: ['BUYER'], render: () => <BuyerView mode="market" /> },
   { key: 'my-orders', label: '我的订单/售后', roles: ['BUYER'], render: () => <BuyerView mode="orders" /> },
   { key: 'appraisal', label: '上门估价', roles: ['APPRAISER'], render: () => <AppraiserView /> },

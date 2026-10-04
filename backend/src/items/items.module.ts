@@ -10,6 +10,7 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -20,9 +21,28 @@ import {
 } from '../entities/item.entity';
 import { Consignment } from '../entities/consignment.entity';
 import { Appraisal } from '../entities/appraisal.entity';
+import { RefurbishOverrunConfirmation } from '../entities/refurbish-confirmation.entity';
 import { JwtAuthGuard, JwtPayload } from '../auth/jwt.guard';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+
+/** 平台内部角色：可见旧照片归档等内部审计记录 */
+const INTERNAL_ROLES = [
+  'WAREHOUSE',
+  'REFURBISHER',
+  'CS',
+  'OPS',
+  'ADMIN',
+  'APPRAISER',
+  'DELIVERY',
+];
+
+/** 买家/卖家视角脱敏：翻新前旧照片与旧瑕疵说明仅保留在内部审计记录中 */
+function publicItem<T extends Partial<Item>>(item: T, role: string): T {
+  if (INTERNAL_ROLES.includes(role)) return item;
+  const { archivedPhotos, archivedDefectNote, ...rest } = item as any;
+  return rest;
+}
 
 class AddWorkLogDto {
   type: WorkLogType;
@@ -34,9 +54,17 @@ class AdvanceDto {
   to: 'PHOTOGRAPHY' | 'LISTED' | 'PREPARING';
   description?: string;
   photos?: string[];
+  defectNote?: string;
   warehouseSlot?: string;
   deliveryRadiusKm?: number;
   listedPrice?: number;
+}
+
+class RephotographDto {
+  /** 翻新后重新拍摄的照片（买家看到的真实状态） */
+  photos: string[];
+  /** 更新后的瑕疵说明（翻新后的真实状态） */
+  defectNote: string;
 }
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -84,24 +112,33 @@ export class ItemController {
     const cMap = new Map(consignments.map((c) => [c.id, c]));
     return items.map((i) => {
       const c = cMap.get(i.consignmentId);
-      return {
-        ...i,
-        sellerId: c?.sellerId,
-        brand: c?.brand,
-        elevator: c?.elevator,
-        floor: c?.floor,
-        disassemblable: c?.disassemblable,
-      };
+      return publicItem(
+        {
+          ...i,
+          sellerId: c?.sellerId,
+          brand: c?.brand,
+          elevator: c?.elevator,
+          floor: c?.floor,
+          disassemblable: c?.disassemblable,
+        },
+        user.role,
+      );
     });
   }
 
   @Get(':id')
-  async detail(@Param('id') id: string) {
+  async detail(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
     const item = await this.ds.getRepository(Item).findOne({ where: { id } });
     if (!item) throw new NotFoundException('商品不存在');
     const consignment = await this.ds
       .getRepository(Consignment)
       .findOne({ where: { id: item.consignmentId } });
+    if (user.role === 'SELLER' && consignment?.sellerId !== user.sub) {
+      throw new ForbiddenException('只能查看自己寄卖的商品');
+    }
     const appraisal = await this.ds
       .getRepository(Appraisal)
       .findOne({ where: { consignmentId: item.consignmentId } });
@@ -109,7 +146,66 @@ export class ItemController {
       where: { itemId: id },
       order: { createdAt: 'DESC' },
     });
-    return { item, consignment, appraisal, workLogs };
+    const overruns = await this.ds
+      .getRepository(RefurbishOverrunConfirmation)
+      .find({ where: { itemId: id }, order: { createdAt: 'DESC' } });
+    const internal = INTERNAL_ROLES.includes(user.role);
+    return {
+      item: publicItem(item, user.role),
+      consignment,
+      appraisal,
+      workLogs,
+      // 超预算确认单的估价偏差原因仅内部角色可见
+      overrunConfirmations: overruns.map((o) =>
+        internal ? o : { ...o, deviationReason: '' },
+      ),
+    };
+  }
+
+  /**
+   * 翻新完成后重新拍摄并更新瑕疵说明：
+   * 买家看到的是翻新后的真实状态；原照片/旧瑕疵说明只保留在内部审计记录中。
+   */
+  @Roles('WAREHOUSE', 'REFURBISHER', 'OPS', 'ADMIN')
+  @Post(':id/rephotograph')
+  async rephotograph(@Param('id') id: string, @Body() dto: RephotographDto) {
+    const photos = (dto.photos || []).filter(Boolean);
+    if (photos.length === 0) {
+      throw new BadRequestException('请上传翻新后的重新拍摄照片');
+    }
+    if (dto.defectNote == null || !String(dto.defectNote).trim()) {
+      throw new BadRequestException('请更新翻新后的瑕疵说明（如实描述剩余瑕疵）');
+    }
+    return this.ds.transaction(async (m) => {
+      const item = await m.findOne(Item, { where: { id } });
+      if (!item) throw new NotFoundException('商品不存在');
+      if (!['PREPARING', 'PHOTOGRAPHY'].includes(item.status)) {
+        throw new BadRequestException(
+          `商品当前 ${item.status}，翻新重拍仅在清洁翻新/拍照阶段可操作`,
+        );
+      }
+      // 原照片与旧瑕疵说明归档（仅内部审计），新照片/说明对买家展示
+      if (item.photos.length) {
+        item.archivedPhotos = Array.from(
+          new Set([...item.archivedPhotos, ...item.photos]),
+        );
+      }
+      if (item.defectNote) item.archivedDefectNote = item.defectNote;
+      item.photos = photos;
+      item.defectNote = String(dto.defectNote).trim();
+      item.refurbishedAt = new Date();
+      if (item.status === 'PREPARING') item.status = 'PHOTOGRAPHY';
+      await m.save(item);
+      await m.save(
+        m.create(ItemWorkLog, {
+          itemId: item.id,
+          type: 'PHOTOGRAPHY',
+          note: '翻新完成后重新拍摄，已更新瑕疵说明；旧照片转入内部审计归档',
+          cost: '0',
+        }),
+      );
+      return item;
+    });
   }
 
   /** 清洁、补漆、维修、拍照、上架描述、入库登记——作业即记账 */
@@ -174,9 +270,30 @@ export class ItemController {
           `商品当前 ${item.status}，不能转到 ${dto.to}；允许：${allowed.join(', ') || '无'}`,
         );
       }
+      // 存在待卖家确认的超预算单时，必须先有结论才能继续
+      const pendingOverrun = await mgr.count(RefurbishOverrunConfirmation, {
+        where: { itemId: id, status: 'PENDING' },
+      });
+      if (pendingOverrun > 0 && dto.to !== 'PREPARING') {
+        throw new BadRequestException(
+          '存在待卖家确认的翻新超预算确认单，需卖家接受或拒绝后才能继续上架',
+        );
+      }
       item.status = dto.to as any;
       if (dto.description != null) item.description = dto.description;
-      if (dto.photos) item.photos = dto.photos;
+      if (dto.defectNote != null) item.defectNote = dto.defectNote;
+      if (dto.photos) {
+        // 上架照片被替换时，旧照片只保留在内部审计归档中
+        const changed =
+          dto.photos.length !== item.photos.length ||
+          dto.photos.some((p, idx) => p !== item.photos[idx]);
+        if (changed && item.photos.length) {
+          item.archivedPhotos = Array.from(
+            new Set([...item.archivedPhotos, ...item.photos]),
+          );
+        }
+        item.photos = dto.photos;
+      }
       if (dto.warehouseSlot) item.warehouseSlot = dto.warehouseSlot;
       if (dto.deliveryRadiusKm != null) {
         item.deliveryRadiusKm = Number(dto.deliveryRadiusKm);
@@ -204,7 +321,15 @@ export class ItemController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Item, ItemWorkLog, Consignment, Appraisal])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Item,
+      ItemWorkLog,
+      Consignment,
+      Appraisal,
+      RefurbishOverrunConfirmation,
+    ]),
+  ],
   controllers: [ItemController],
 })
 export class ItemModule {}

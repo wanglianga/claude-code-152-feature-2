@@ -48,7 +48,8 @@ export class SellerRiskService {
     const consignmentIds = consignments.map((c) => c.id);
 
     const backtrackCount = consignments.filter(
-      (c) => c.status === 'CANCELLED',
+      (c) =>
+        c.status === 'CANCELLED' && c.cancelReason !== 'OVERRUN_REJECTED',
     ).length;
 
     let mismatchCount = 0;

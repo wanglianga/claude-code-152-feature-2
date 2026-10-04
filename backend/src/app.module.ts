@@ -6,6 +6,7 @@ import { RiskModule } from './risk/risk.module';
 import { ConsignmentModule } from './consignments/consignments.module';
 import { AppraisalModule } from './appraisals/appraisals.module';
 import { ItemModule } from './items/items.module';
+import { RefurbishModule } from './refurbish/refurbish.module';
 import { OrderModule } from './orders/orders.module';
 import { DeliveryModule } from './deliveries/deliveries.module';
 import { TicketModule } from './tickets/tickets.module';
@@ -34,6 +35,7 @@ import { SeederService, SeederModule } from './seeder/seeder.module';
     ConsignmentModule,
     AppraisalModule,
     ItemModule,
+    RefurbishModule,
     OrderModule,
     DeliveryModule,
     TicketModule,

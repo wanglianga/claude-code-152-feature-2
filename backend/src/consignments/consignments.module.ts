@@ -160,6 +160,7 @@ export class ConsignmentController {
       );
     }
     row.status = 'CANCELLED';
+    row.cancelReason = 'SELLER_BACKTRACK';
     row.sellerNote = `${row.sellerNote}\n[卖家反悔] ${body?.reason || '未填写原因'}`.trim();
     await this.repo.save(row);
     const profile = await this.risk.recalculate(user.sub);
